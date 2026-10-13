@@ -135,3 +135,115 @@ select cron.schedule(
   '0 19 * * *',
   $$ delete from public.messages where created_at < now() - interval '7 days' $$
 );
+
+-- =========================================================
+-- 6. 在線名單:資料表 + 心跳(不依賴 Realtime Presence)
+-- =========================================================
+-- 每個人進入後,每 3 秒呼叫一次 chat_tick:更新自己的「最後在線時間」並取回名單。
+-- 超過 15 秒沒更新就當作離開(關掉分頁、斷網都會自動消失)。
+-- 資料表本身不開放給公開金鑰,只能透過下面幾個函式操作。
+create table if not exists public.presence (
+  client_id text        primary key,
+  nickname  text        not null,
+  joined_at timestamptz not null default now(),
+  last_seen timestamptz not null default now(),
+  online    boolean     not null default true,
+
+  constraint presence_client_id_len check (char_length(client_id) between 1 and 64),
+  constraint presence_nickname_len  check (char_length(nickname)  between 1 and 12),
+  constraint presence_nickname_trimmed  check (nickname = btrim(nickname)),
+  constraint presence_nickname_spaces   check (nickname !~ E'[\t\n\r\f\v]' and nickname !~ '  '),
+  constraint presence_nickname_reserved check (
+    lower(nickname) not in ('系統', '管理員', '管理者', 'admin', 'administrator', 'system')
+  ),
+  constraint presence_nickname_invisible check (
+    nickname !~ '[\u0001-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]'
+  )
+);
+
+alter table public.presence enable row level security;
+revoke all on public.presence from anon, authenticated;
+-- 沒有任何 policy:公開金鑰無法直接讀寫這張表。
+
+-- 進入聊天室:登記代號。同名且對方還在線,就拒絕(NICKNAME_TAKEN)。
+-- advisory lock 讓「同一瞬間用同名進入」的兩個人排隊,一定只有一個成功。
+create or replace function public.join_chat(p_client_id text, p_nickname text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform pg_advisory_xact_lock(hashtext('join:' || p_nickname));
+
+  if exists (
+    select 1 from public.presence x
+    where x.nickname = p_nickname
+      and x.client_id <> p_client_id
+      and x.online
+      and x.last_seen > now() - interval '15 seconds'
+  ) then
+    raise exception 'NICKNAME_TAKEN';
+  end if;
+
+  insert into public.presence as p (client_id, nickname)
+  values (p_client_id, p_nickname)
+  on conflict (client_id) do update set
+    nickname  = excluded.nickname,
+    joined_at = case when p.online and p.last_seen > now() - interval '15 seconds'
+                     then p.joined_at else now() end,
+    online    = true,
+    last_seen = now();
+end;
+$$;
+
+-- 心跳 + 取回目前在線名單。p_client_id 傳空字串時只讀取名單(進入畫面的人數用)。
+create or replace function public.chat_tick(p_client_id text)
+returns table (cid text, nick text, joined_ms bigint)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.presence p
+  set joined_at = case when p.online and p.last_seen > now() - interval '15 seconds'
+                       then p.joined_at else now() end,
+      last_seen = now()
+  where p.client_id = p_client_id
+    and p.online;  -- 已主動離開的人,心跳不能把他復活(要重新 join_chat)
+
+  return query
+  select x.client_id, x.nickname, (extract(epoch from x.joined_at) * 1000)::bigint
+  from public.presence x
+  where x.online and x.last_seen > now() - interval '15 seconds'
+  order by x.joined_at;
+end;
+$$;
+
+-- 主動離開
+create or replace function public.leave_chat(p_client_id text)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update public.presence set online = false where client_id = p_client_id;
+$$;
+
+revoke all on function public.join_chat(text, text) from public;
+revoke all on function public.chat_tick(text)       from public;
+revoke all on function public.leave_chat(text)      from public;
+grant execute on function public.join_chat(text, text) to anon, authenticated;
+grant execute on function public.chat_tick(text)       to anon, authenticated;
+grant execute on function public.leave_chat(text)      to anon, authenticated;
+
+-- 名單資料只留一天
+select cron.unschedule(jobid)
+from cron.job
+where jobname = 'delete-old-presence';
+
+select cron.schedule(
+  'delete-old-presence',
+  '10 19 * * *',
+  $$ delete from public.presence where last_seen < now() - interval '1 day' $$
+);
