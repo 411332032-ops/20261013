@@ -23,6 +23,7 @@ const CHANNEL_NAME = 'lobby'
 const TABLE = 'messages'
 const START_TIMEOUT_MS = 10_000
 const SETTLE_MS = 300
+const TRACK_TIMEOUT_MS = 3000
 
 interface PresenceMeta {
   nickname: string
@@ -55,6 +56,7 @@ export class SupabaseChatService implements ChatService {
   private readonly supabase: SupabaseClient
   private channel: RealtimeChannel | null = null
   private starting: Promise<void> | null = null
+  private listening = false
 
   private listeners: Listeners = {
     message: new Set(),
@@ -106,10 +108,10 @@ export class SupabaseChatService implements ChatService {
 
     try {
       await this.ensureStarted()
-    } catch {
+    } catch (e) {
+      console.error('[chat] 連不上 Supabase Realtime:', e instanceof Error ? e.message : e)
       return { ok: false, error: 'UNAVAILABLE' }
     }
-    const channel = this.channel!
     const nickname = check.value
 
     if (this.isNicknameTaken(nickname)) return { ok: false, error: 'NICKNAME_TAKEN' }
@@ -117,8 +119,10 @@ export class SupabaseChatService implements ChatService {
     const me: Member = { clientId: this.clientId, nickname, joinedAt: Date.now() }
     this.grace.seed([...this.others.values()])
     this.me = me
-    const tracked = await channel.track({ nickname, joinedAt: me.joinedAt } satisfies PresenceMeta)
-    if (tracked !== 'ok') return this.abortJoin('UNAVAILABLE')
+    // 不等登記完成:Supabase Realtime 在多人幾乎同時登記時,偶爾會讓伺服器端的頻道崩潰,
+    // 要卡 10 秒。所以登記放在背景做,卡住就自己重建頻道(見 trackWithRecovery),
+    // 使用者不必等。真正連不上時,下面查歷史訊息會失敗而回報 UNAVAILABLE。
+    void this.trackWithRecovery(me)
 
     // 同一瞬間有人用同名進來:等名單同步後再檢查一次,joinedAt 較晚的退出(6.1)
     await sleep(SETTLE_MS)
@@ -145,6 +149,7 @@ export class SupabaseChatService implements ChatService {
       content: check.value,
     })
     if (!error) return { ok: true, value: undefined }
+    console.error('[chat] 送出訊息失敗:', error.message, error.code ?? '')
     if (error.message.includes('RATE_LIMITED')) return { ok: false, error: 'RATE_LIMITED' }
     // 23514 = CHECK 規則不通過
     if (error.code === '23514') return { ok: false, error: 'INVALID_CONTENT' }
@@ -173,9 +178,12 @@ export class SupabaseChatService implements ChatService {
 
   private start(): Promise<void> {
     this.browserOnline = typeof navigator === 'undefined' ? true : navigator.onLine
-    window.addEventListener('pagehide', this.handlePageHide)
-    window.addEventListener('offline', this.handleBrowserOffline)
-    window.addEventListener('online', this.handleBrowserOnline)
+    if (!this.listening) {
+      this.listening = true
+      window.addEventListener('pagehide', this.handlePageHide)
+      window.addEventListener('offline', this.handleBrowserOffline)
+      window.addEventListener('online', this.handleBrowserOnline)
+    }
 
     const channel = this.supabase.channel(CHANNEL_NAME, {
       config: { presence: { key: this.clientId } },
@@ -209,11 +217,14 @@ export class SupabaseChatService implements ChatService {
           (payload) => this.deliver(toMessage(payload.new as MessageRow)),
         )
         .subscribe((state) => {
+          // 重建頻道時,舊頻道的事件(例如 CLOSED)不能影響新的
+          if (this.channel !== channel) return
           if (state === 'SUBSCRIBED') {
             const wasConnected = this.connected
             this.connected = true
             if (!subscribed) {
               subscribed = true
+              if (this.me && this.browserOnline) this.setStatus('online')
               settle()
             } else if (!wasConnected) {
               void this.recover()
@@ -238,6 +249,38 @@ export class SupabaseChatService implements ChatService {
   private handleBrowserOnline = () => {
     this.browserOnline = true
     if (this.me && this.connected) this.setStatus('online')
+  }
+
+  /**
+   * 登記在線。3 秒沒有回應就當作頻道卡住:拆掉重建、補上這段期間錯過的訊息,再登記一次。
+   * 最多重試 3 次,用掉的時間遠比等伺服器自己恢復(約 10 秒)短。
+   */
+  private async trackWithRecovery(me: Member): Promise<void> {
+    const payload = { nickname: me.nickname, joinedAt: me.joinedAt } satisfies PresenceMeta
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (this.me !== me || !this.channel) return
+      const result = await this.channel.track(payload, { timeout: TRACK_TIMEOUT_MS })
+      if (result === 'ok') return
+      if (this.me !== me) return
+      console.warn(`[chat] 登記在線沒有回應(${result}),重建頻道,第 ${attempt + 1} 次`)
+      try {
+        await this.restartChannel()
+      } catch (e) {
+        console.error('[chat] 重建頻道失敗:', e instanceof Error ? e.message : e)
+        return
+      }
+      const missed = await this.fetchHistory(this.lastCreatedAt)
+      missed?.forEach((m) => this.deliver(m))
+    }
+  }
+
+  private async restartChannel(): Promise<void> {
+    const old = this.channel
+    this.channel = null
+    this.starting = null
+    this.connected = false
+    if (old) await this.supabase.removeChannel(old)
+    await this.ensureStarted()
   }
 
   /** 斷線後重新連上:重新登記在線、補上錯過的訊息(6.4) */
@@ -305,7 +348,10 @@ export class SupabaseChatService implements ChatService {
         ? query.order('created_at', { ascending: false }).limit(MESSAGE_HISTORY_LIMIT)
         : query.gte('created_at', new Date(since).toISOString()).order('created_at', { ascending: true })
     const { data, error } = await query
-    if (error || !data) return null
+    if (error || !data) {
+      console.error('[chat] 查詢 messages 失敗:', error?.message ?? '沒有資料', error?.code ?? '')
+      return null
+    }
     const messages = (data as MessageRow[]).map(toMessage)
     return since === undefined ? messages.reverse() : messages
   }
