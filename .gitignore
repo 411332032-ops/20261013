@@ -1,0 +1,11 @@
+# 金鑰與環境設定(絕對不可 commit)
+.env
+.env.local
+.env.*.local
+
+# 範例檔可以 commit
+!.env.example
+
+# 套件與打包成品
+node_modules/
+dist/
