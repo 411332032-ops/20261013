@@ -32,10 +32,10 @@ create table if not exists public.messages (
 
   -- 控制字元、零寬字元、方向控制字元(內容允許換行 \n,代號不允許任何控制字元)
   constraint messages_nickname_invisible check (
-    nickname !~ '[\u0001-\u001F\u007F-\u009F​-‏‪-‮⁠-⁤⁦-⁩﻿]'
+    nickname !~ '[\u0001-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]'
   ),
   constraint messages_content_invisible check (
-    content !~ '[\u0001-\u0009\u000B-\u001F\u007F-\u009F​-‏‪-‮⁠-⁤⁦-⁩﻿]'
+    content !~ '[\u0001-\u0009\u000B-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]'
   )
 );
 
