@@ -743,3 +743,139 @@ button:disabled {
     animation: none;
   }
 }
+
+/* 回覆 / 引用 */
+
+.reply-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 28px;
+  padding: 0 6px;
+  margin: -4px 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.reply-btn:hover,
+.reply-btn:focus-visible {
+  background: var(--surface2);
+  color: var(--ink);
+}
+
+.quote {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  margin: 0 0 7px;
+  padding: 5px 9px;
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--surface2);
+  border: 0;
+  border-left: 3px solid var(--qc, var(--accent));
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.quote:disabled {
+  cursor: default;
+}
+
+.own .quote {
+  background: rgba(255, 255, 255, 0.2);
+  color: inherit;
+  border-left-color: currentColor;
+}
+
+.q-nick {
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--qc, var(--ink));
+}
+
+.own .q-nick {
+  color: inherit;
+}
+
+.q-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  opacity: 0.85;
+}
+
+.row.flash .bubble {
+  animation: flash 1.6s ease-out;
+}
+
+@keyframes flash {
+  0%,
+  35% {
+    box-shadow: 0 0 0 3px var(--accent);
+  }
+  100% {
+    box-shadow: 0 0 0 3px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row.flash .bubble {
+    animation: none;
+    box-shadow: 0 0 0 3px var(--accent);
+  }
+}
+
+.replybar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 10px;
+  background: var(--surface2);
+  border-left: 3px solid var(--qc, var(--accent));
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.rb-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.rb-label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.rb-label b {
+  color: var(--qc, var(--ink));
+}
+
+.rb-excerpt {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.rb-close {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+}

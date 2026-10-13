@@ -9,6 +9,15 @@ export interface Message {
   clientId: string
   nickname: string
   content: string
+  /** 回覆/引用:被回覆那則的資訊。代號與摘要在階段二由資料庫依原訊息填入 */
+  replyTo?: ReplyRef
+}
+
+export interface ReplyRef {
+  /** 原訊息的 id。原訊息已被清除時為 null,但代號與摘要仍保留 */
+  id: string | null
+  nickname: string
+  excerpt: string
 }
 
 export interface Member {
@@ -46,7 +55,8 @@ export interface ChatService {
   /** 進入畫面顯示的「目前 N 人在線」 */
   getOnlineCount(): Promise<number>
   join(nickname: string): Promise<Result<JoinSuccess, JoinError>>
-  send(content: string): Promise<Result<void, SendError>>
+  /** replyToId:要回覆的那則訊息的 id(可省略) */
+  send(content: string, replyToId?: string): Promise<Result<void, SendError>>
   leave(): void
   /** 訂閱事件,回傳取消訂閱的函式 */
   on<K extends keyof ChatEvents>(event: K, handler: ChatEvents[K]): () => void

@@ -39,6 +39,14 @@ create table if not exists public.messages (
   )
 );
 
+-- 回覆/引用:reply_to 是被回覆那則的 id;代號和摘要由下面的觸發器依原訊息填入,
+-- 使用者送來的值一律不採用(不能偽造「某人說過某句話」)。原訊息 7 天後被清除時,
+-- reply_to 會變 null,但代號和摘要留著,所以引用仍然看得到。
+alter table public.messages
+  add column if not exists reply_to       uuid references public.messages(id) on delete set null,
+  add column if not exists reply_nickname text,
+  add column if not exists reply_excerpt  text;
+
 -- 載入最近 50 則、補斷線期間錯過的訊息,都是依時間查詢
 create index if not exists messages_created_at_idx
   on public.messages (created_at desc);
@@ -58,6 +66,17 @@ as $$
 begin
   -- 不信任使用者電腦的時鐘
   new.created_at := now();
+
+  -- 回覆/引用:代號與摘要由原訊息決定。找不到原訊息時,就當作一般訊息
+  if new.reply_to is not null then
+    select m.id, m.nickname, left(regexp_replace(m.content, '\s+', ' ', 'g'), 80)
+      into new.reply_to, new.reply_nickname, new.reply_excerpt
+      from public.messages m
+      where m.id = new.reply_to;
+  else
+    new.reply_nickname := null;
+    new.reply_excerpt  := null;
+  end if;
 
   -- 同一個 client_id 在 5 秒內已有 3 則,就拒絕
   if (
@@ -98,10 +117,10 @@ create policy "anyone can insert messages"
 
 -- 沒有 update、delete 的規則 = 一律拒絕。
 -- 再從權限層面收緊一次(雙重保險),並且只允許寫入三個欄位:
--- id 與 created_at 一律由資料庫自己產生,使用者不能指定。
+-- id、created_at、reply_nickname、reply_excerpt 一律由資料庫自己產生,使用者不能指定。
 revoke all on public.messages from anon, authenticated;
 grant select on public.messages to anon, authenticated;
-grant insert (client_id, nickname, content) on public.messages to anon, authenticated;
+grant insert (client_id, nickname, content, reply_to) on public.messages to anon, authenticated;
 
 -- =========================================================
 -- 4. 即時通知:有新訊息時通知所有訂閱的人

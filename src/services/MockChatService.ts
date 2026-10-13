@@ -1,5 +1,6 @@
 import { PresenceGrace } from '../lib/presenceGrace'
 import { RateLimiter } from '../lib/rateLimit'
+import { makeExcerpt } from '../lib/reply'
 import { newId } from '../lib/storage'
 import {
   MESSAGE_HISTORY_LIMIT,
@@ -150,7 +151,7 @@ export class MockChatService implements ChatService {
     return { ok: true, value: { history, members: this.memberList() } }
   }
 
-  async send(rawContent: string): Promise<Result<void, SendError>> {
+  async send(rawContent: string, replyToId?: string): Promise<Result<void, SendError>> {
     if (this.offline) return { ok: false, error: 'OFFLINE' }
     const check = validateContent(rawContent)
     if (!check.ok || !this.me) return { ok: false, error: 'INVALID_CONTENT' }
@@ -163,6 +164,15 @@ export class MockChatService implements ChatService {
       clientId: this.clientId,
       nickname: this.me.nickname,
       content: check.value,
+    }
+    // 回覆:摘要由「原訊息」決定,不採用使用者給的文字(和資料庫觸發器的做法一致)
+    const original = replyToId ? this.loadHistory().find((m) => m.id === replyToId) : undefined
+    if (original) {
+      message.replyTo = {
+        id: original.id,
+        nickname: original.nickname,
+        excerpt: makeExcerpt(original.content),
+      }
     }
     this.saveMessage(message)
     this.post({ t: 'msg', m: message })

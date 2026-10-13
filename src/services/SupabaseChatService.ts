@@ -34,7 +34,13 @@ interface MessageRow {
   client_id: string
   nickname: string
   content: string
+  reply_to: string | null
+  reply_nickname: string | null
+  reply_excerpt: string | null
 }
+
+const MESSAGE_COLUMNS =
+  'id, created_at, client_id, nickname, content, reply_to, reply_nickname, reply_excerpt'
 
 interface MemberRow {
   cid: string
@@ -51,6 +57,11 @@ function toMessage(row: MessageRow): Message {
     clientId: row.client_id,
     nickname: row.nickname,
     content: row.content,
+    // 引用的代號與摘要是資料庫依原訊息填的;原訊息被清除後 reply_to 會是 null,但摘要還在
+    replyTo:
+      row.reply_nickname !== null
+        ? { id: row.reply_to, nickname: row.reply_nickname, excerpt: row.reply_excerpt ?? '' }
+        : undefined,
   }
 }
 
@@ -157,7 +168,7 @@ export class SupabaseChatService implements ChatService {
     return { ok: true, value: { history, members: this.memberList() } }
   }
 
-  async send(rawContent: string): Promise<Result<void, SendError>> {
+  async send(rawContent: string, replyToId?: string): Promise<Result<void, SendError>> {
     if (!this.me) return { ok: false, error: 'INVALID_CONTENT' }
     if (this.status !== 'online') return { ok: false, error: 'OFFLINE' }
     const check = validateContent(rawContent)
@@ -167,8 +178,13 @@ export class SupabaseChatService implements ChatService {
     // 直接用寫入的回傳結果顯示,不必等 Realtime 通知;之後收到通知時以 id 去重。
     const { data, error } = await this.supabase
       .from(TABLE)
-      .insert({ client_id: this.clientId, nickname: this.me.nickname, content: check.value })
-      .select('id, created_at, client_id, nickname, content')
+      .insert({
+        client_id: this.clientId,
+        nickname: this.me.nickname,
+        content: check.value,
+        reply_to: replyToId ?? null,
+      })
+      .select(MESSAGE_COLUMNS)
       .single()
     if (!error && data) {
       this.deliver(toMessage(data as MessageRow))
@@ -346,7 +362,7 @@ export class SupabaseChatService implements ChatService {
 
   /** 查歷史:不帶 since 時取最近 50 則;帶 since 時取該時間之後的全部 */
   private async fetchHistory(since?: number): Promise<Message[] | null> {
-    let query = this.supabase.from(TABLE).select('id, created_at, client_id, nickname, content')
+    let query = this.supabase.from(TABLE).select(MESSAGE_COLUMNS)
     query =
       since === undefined
         ? query.order('created_at', { ascending: false }).limit(MESSAGE_HISTORY_LIMIT)

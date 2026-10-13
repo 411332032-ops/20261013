@@ -78,7 +78,8 @@ export function useChatSession(service: ChatService) {
   )
 
   const send = useCallback(
-    (content: string): Promise<Result<void, SendError>> => service.send(content),
+    (content: string, replyToId?: string): Promise<Result<void, SendError>> =>
+      service.send(content, replyToId),
     [service],
   )
 

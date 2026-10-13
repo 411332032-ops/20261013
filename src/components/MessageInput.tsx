@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { RateLimiter } from '../lib/rateLimit'
 import { CONTENT_MAX, charLength, clampChars, validateContent } from '../lib/validation'
-import type { Result, SendError } from '../types'
-import { SendIcon } from './Icons'
+import { nicknameColor } from '../lib/nicknameColor'
+import { makeExcerpt } from '../lib/reply'
+import type { Message, Result, SendError } from '../types'
+import { CloseIcon, SendIcon } from './Icons'
 
 const HINT_MS = 3000
 const MAX_HEIGHT_PX = 120
@@ -12,10 +14,15 @@ const ENTER_SENDS = '(hover: hover) and (pointer: fine)'
 
 export function MessageInput({
   offline,
+  reply,
+  onCancelReply,
   onSend,
 }: {
   offline: boolean
-  onSend: (content: string) => Promise<Result<void, SendError>>
+  /** 正在回覆的那則訊息(沒有就是 null) */
+  reply: Message | null
+  onCancelReply: () => void
+  onSend: (content: string, replyToId?: string) => Promise<Result<void, SendError>>
 }) {
   const [draft, setDraft] = useState('')
   const [warning, setWarning] = useState('')
@@ -34,6 +41,11 @@ export function MessageInput({
     el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT_PX)}px`
   }, [draft])
 
+  // 按下某則訊息的「回覆」後,游標直接回到輸入框
+  useEffect(() => {
+    if (reply) field.current?.focus()
+  }, [reply])
+
   const warn = (text: string) => {
     setWarning(text)
     clearTimeout(warnTimer.current)
@@ -50,10 +62,11 @@ export function MessageInput({
       return
     }
     setSending(true)
-    const result = await onSend(draft)
+    const result = await onSend(draft, reply?.id)
     setSending(false)
     if (result.ok) {
       setDraft('')
+      onCancelReply()
       field.current?.focus()
       return
     }
@@ -63,6 +76,10 @@ export function MessageInput({
   }
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Escape' && reply) {
+      onCancelReply()
+      return
+    }
     if (e.key !== 'Enter' || e.shiftKey) return
     // 中文輸入法選字時按的 Enter 不算送出
     if (e.nativeEvent.isComposing) return
@@ -89,6 +106,22 @@ export function MessageInput({
         void submit()
       }}
     >
+      {reply && (
+        <div
+          className="replybar"
+          style={{ '--qc': nicknameColor(reply.nickname) } as React.CSSProperties}
+        >
+          <div className="rb-body">
+            <span className="rb-label">
+              回覆 <b>{reply.nickname}</b>
+            </span>
+            <span className="rb-excerpt">{makeExcerpt(reply.content)}</span>
+          </div>
+          <button className="rb-close" type="button" aria-label="取消回覆" onClick={onCancelReply}>
+            <CloseIcon size={18} />
+          </button>
+        </div>
+      )}
       <div className="composer-row">
         <textarea
           ref={field}

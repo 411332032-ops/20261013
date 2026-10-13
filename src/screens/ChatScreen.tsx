@@ -6,7 +6,7 @@ import { MemberSheet } from '../components/MemberSheet'
 import { MessageInput } from '../components/MessageInput'
 import { MessageList } from '../components/MessageList'
 import { useMediaQuery } from '../hooks/useMediaQuery'
-import type { ChatItem, ConnectionStatus, Member, Result, SendError } from '../types'
+import type { ChatItem, ConnectionStatus, Member, Message, Result, SendError } from '../types'
 
 export function ChatScreen({
   items,
@@ -20,10 +20,11 @@ export function ChatScreen({
   members: Member[]
   status: ConnectionStatus
   myClientId: string
-  onSend: (content: string) => Promise<Result<void, SendError>>
+  onSend: (content: string, replyToId?: string) => Promise<Result<void, SendError>>
   onLeave: () => void
 }) {
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [reply, setReply] = useState<Message | null>(null)
   const isWide = useMediaQuery('(min-width: 768px)')
   const closeSheet = useCallback(() => setSheetOpen(false), [])
   const offline = status === 'reconnecting'
@@ -60,8 +61,13 @@ export function ChatScreen({
             </button>
           </header>
 
-          <MessageList items={items} myClientId={myClientId} />
-          <MessageInput offline={offline} onSend={onSend} />
+          <MessageList items={items} myClientId={myClientId} onReply={setReply} />
+          <MessageInput
+            offline={offline}
+            reply={reply}
+            onCancelReply={() => setReply(null)}
+            onSend={onSend}
+          />
         </div>
 
         {isWide && (

@@ -79,3 +79,10 @@ export const AlertIcon = (p: IconProps) => (
     <path d="M12 16.5h.01" />
   </Svg>
 )
+
+export const ReplyIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M9 7L4 12l5 5" />
+    <path d="M4 12h10a6 6 0 0 1 6 6v1" />
+  </Svg>
+)

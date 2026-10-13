@@ -1,5 +1,5 @@
 import { Fragment, useLayoutEffect, useRef, useState } from 'react'
-import type { ChatItem } from '../types'
+import type { ChatItem, Message } from '../types'
 import { ArrowDownIcon, ChatBubblesIcon } from './Icons'
 import { MessageItem } from './MessageItem'
 
@@ -19,7 +19,15 @@ function dayLabel(ms: number): string {
 
 const NEAR_BOTTOM_PX = 48
 
-export function MessageList({ items, myClientId }: { items: ChatItem[]; myClientId: string }) {
+export function MessageList({
+  items,
+  myClientId,
+  onReply,
+}: {
+  items: ChatItem[]
+  myClientId: string
+  onReply: (message: Message) => void
+}) {
   const scroller = useRef<HTMLDivElement>(null)
   const stickToBottom = useRef(true)
   const previousCount = useRef(0)
@@ -31,6 +39,17 @@ export function MessageList({ items, myClientId }: { items: ChatItem[]; myClient
     el.scrollTop = el.scrollHeight
     stickToBottom.current = true
     setHasNew(false)
+  }
+
+  /** 點引用:捲到原訊息並閃一下。原訊息不在目前載入的範圍內就不動 */
+  const jumpTo = (id: string) => {
+    const el = document.getElementById(`m-${id}`)
+    if (!el) return
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    el.classList.remove('flash')
+    void el.offsetWidth // 讓動畫可以重新開始
+    el.classList.add('flash')
+    setTimeout(() => el.classList.remove('flash'), 1600)
   }
 
   const onScroll = () => {
@@ -98,7 +117,12 @@ export function MessageList({ items, myClientId }: { items: ChatItem[]; myClient
               {item.kind === 'system' ? (
                 <div className="sys">{item.text}</div>
               ) : (
-                <MessageItem message={item.message} own={item.message.clientId === myClientId} />
+                <MessageItem
+                  message={item.message}
+                  own={item.message.clientId === myClientId}
+                  onReply={onReply}
+                  onJump={jumpTo}
+                />
               )}
             </Fragment>
           )
