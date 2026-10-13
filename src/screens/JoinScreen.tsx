@@ -7,7 +7,7 @@ import type { ChatService, JoinError, Result } from '../types'
 const ERROR_TEXT: Record<JoinError, string> = {
   NICKNAME_TAKEN: '這個代號已有人使用,請換一個',
   INVALID_NICKNAME: '這個名稱不能使用,請換一個',
-  UNAVAILABLE: '連線失敗,請稍後再試',
+  UNAVAILABLE: '聊天室暫時無法使用,請稍後再試',
 }
 
 export function JoinScreen({

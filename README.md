@@ -2,7 +2,7 @@
 
 不用登入的匿名聊天室。詳細設計見 `docs/architecture.md`(架構)與 `docs/design.md`(畫面)。
 
-目前在**階段一**:只有前端,用模擬版聊天服務,不連 Supabase。
+目前在**階段二**:前端已接上 Supabase。`.env.local`(參考 `.env.example`)有網址和公開金鑰時用真實版,沒有就用模擬版。
 
 ## 在自己的電腦上執行
 

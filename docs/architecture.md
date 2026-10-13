@@ -115,7 +115,7 @@ flowchart TB
 
 - 畫面只對著「介面」寫,完全不知道背後是模擬還是真的。
 - 階段一寫 `MockChatService`,階段二新增 `SupabaseChatService`,**畫面程式一行都不用改**。
-- 用哪一版,由一個「環境開關」決定(見第 8 章):沒有填 Supabase 網址就自動用模擬版。
+- 用哪一版,由一個「環境開關」決定(見第 8 章):網址和公開金鑰**都有填**才用 Supabase 版;沒填就自動用模擬版,只填其中一個會在控制台警告並使用模擬版。
 
 ### 4.2 階段一:只有前端,放上 GitHub Pages
 
@@ -314,8 +314,8 @@ sequenceDiagram
 | 標題與一句簡短說明 | 純顯示 |
 | 代號輸入框 | 如果瀏覽器記得上次的代號,預先填入。限制 1~12 字,超過就無法再輸入;即時顯示字數。 |
 | 「進入」按鈕 | 代號合格才可按。按下後顯示「進入中…」並暫時不能重複按。 |
-| 錯誤提示 | 代號被使用:「這個代號已有人使用,請換一個」;代號格式不合:說明哪裡不合;連線失敗:提示稍後再試。 |
-| 目前人數(階段二才有) | 顯示「目前 N 人在線」,讓人知道有沒有人在。 |
+| 錯誤提示 | 代號被使用:「這個代號已有人使用,請換一個」;代號格式不合:說明哪裡不合;連線失敗:顯示「聊天室暫時無法使用,請稍後再試」(見 9.4)。 |
+| 目前人數 | 顯示「目前 N 人在線」,讓人知道有沒有人在。階段一的模擬版也會顯示;取不到人數時整個提示不顯示。 |
 
 ### 7.2 畫面 B:聊天室
 
@@ -337,7 +337,7 @@ sequenceDiagram
 | 日期分隔線 | 跨日時插入一條,例如「2026 年 10 月 13 日」。 |
 | 系統提示行 | 灰色小字,例如「小明 加入了聊天室」、「小明 離開了聊天室」。跟著訊息一起往上捲動。只在你**在線期間**發生的才會顯示(見第 10 章)。 |
 | 載入中 / 空狀態 | 載入歷史時顯示載入中;沒有任何訊息時顯示「還沒有人說話,來說第一句吧」。 |
-| 捲動行為 | 你本來停在最底:新訊息進來就自動捲到底。你正往上翻舊訊息:畫面不動,右下角出現「有新訊息 ↓」按鈕,點了才回到最底並消失。 |
+| 捲動行為 | 你本來停在最底,或是你剛送出自己的訊息:自動捲到底。你正往上翻舊訊息:畫面不動,右下角出現「有新訊息 ↓」按鈕,點了才回到最底並消失。 |
 
 **B3. 在線名單**
 
@@ -351,7 +351,7 @@ sequenceDiagram
 
 | 元素 | 行為 |
 |---|---|
-| 輸入框 | 最多 500 字,接近上限時顯示剩餘字數。電腦版:**Enter 送出,Shift+Enter 換行**。手機版:Enter 是換行。 |
+| 輸入框 | 最多 500 字,輸入框下方一直顯示「已輸入字數 / 500」。電腦版:**Enter 送出,Shift+Enter 換行**。手機版:Enter 是換行。 |
 | 「送出」按鈕 | 內容為空(只有空白也算空)時不能按。手機版靠它送出。 |
 | 超速提示 | 5 秒內送超過 3 則時顯示「請稍等一下再送」,內容保留。 |
 
@@ -496,7 +496,8 @@ sequenceDiagram
 .
 ├─ docs/
 │  ├─ requirements.md          需求說明
-│  └─ architecture.md          本文件
+│  ├─ architecture.md          本文件
+│  └─ design.md                畫面設計說明
 ├─ .github/
 │  └─ workflows/
 │     └─ deploy.yml            自動打包並部署到 GitHub Pages
@@ -512,8 +513,10 @@ sequenceDiagram
 │  │  ├─ MessageList.tsx       訊息區(含捲動、日期線、系統提示)
 │  │  ├─ MessageItem.tsx       單則訊息(含網址轉連結)
 │  │  ├─ MemberList.tsx        在線名單
+│  │  ├─ MemberSheet.tsx       手機版展開的在線名單面板
 │  │  ├─ MessageInput.tsx      輸入區
-│  │  └─ ConnectionBanner.tsx  斷線提示條
+│  │  ├─ ConnectionBanner.tsx  斷線提示條
+│  │  └─ Icons.tsx             線條圖示
 │  ├─ services/                「聊天服務」的所在
 │  │  ├─ ChatService.ts        介面約定(第 5 章的事件與動作)
 │  │  ├─ MockChatService.ts    階段一:模擬版
@@ -524,8 +527,12 @@ sequenceDiagram
 │  │  ├─ rateLimit.ts          前端的發言速率限制
 │  │  ├─ linkify.ts            把網址拆成「文字 + 連結」片段
 │  │  ├─ nicknameColor.ts      由代號決定固定顏色
-│  │  └─ storage.ts            讀寫 localStorage(代號、clientId)
-│  ├─ hooks/                   React 的共用邏輯(例如訂閱聊天服務、未讀數)
+│  │  ├─ presenceGrace.ts      加入/離開提示的 10 秒寬限(兩版服務共用)
+│  │  └─ storage.ts            代號存 localStorage、clientId 存 sessionStorage
+│  ├─ hooks/                   React 的共用邏輯
+│  │  ├─ useChatSession.ts     畫面狀態:訊息、名單、連線狀態(只認聊天服務介面)
+│  │  ├─ useUnreadTitle.ts     分頁標題的未讀數
+│  │  └─ useMediaQuery.ts      判斷電腦版或手機版版面
 │  ├─ types.ts                 Message、Member 等資料型別
 │  └─ styles/                  樣式(由 /design 決定內容)
 ├─ index.html
@@ -533,6 +540,7 @@ sequenceDiagram
 ├─ tsconfig.json
 ├─ package.json                專案設定與用到的套件清單
 ├─ .env.example                環境變數範例(只有名稱,沒有值)
+├─ CLAUDE.md                   給 Claude Code 的專案說明與規則
 ├─ .gitignore                  列入 .env、.env.local、node_modules、dist
 └─ README.md                   如何在自己電腦上執行
 ```
